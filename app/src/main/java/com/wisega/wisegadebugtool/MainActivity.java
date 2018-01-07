@@ -18,12 +18,12 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import com.clj.fastble.BleManager;
 import com.clj.fastble.callback.BleGattCallback;
 import com.clj.fastble.callback.BleNotifyCallback;
-import com.clj.fastble.callback.BleReadCallback;
 import com.clj.fastble.callback.BleScanCallback;
 import com.clj.fastble.data.BleDevice;
 import com.clj.fastble.exception.BleException;
@@ -31,6 +31,7 @@ import com.clj.fastble.scan.BleScanRuleConfig;
 import com.hexad.bluezime.HIDKeyboard;
 import com.newgame.keyboardsdk.KeyboardService;
 import com.newgame.keyboardsdk.util.Hex;
+import com.qmuiteam.qmui.widget.dialog.QMUITipDialog;
 
 import java.util.Arrays;
 import java.util.List;
@@ -67,6 +68,8 @@ public class MainActivity extends AppCompatActivity {
     private KeyboardService.IStateCallBack iBlueconect;
     private com.qmuiteam.qmui.widget.QMUIFontFitTextView mDataShow;
     private int dataColor;
+    private EditText edit_rssi;
+    private QMUITipDialog tipDialog;
 
 
     @Override
@@ -83,7 +86,7 @@ public class MainActivity extends AppCompatActivity {
 
         uuids = new String[]{ET_UUID_SERVICE, ET_UUID_NOTIFY};
 
-        BleManager.getInstance().setOperateTimeout(10000000);
+        BleManager.getInstance().setOperateTimeout(2000);
         BleScanRuleConfig scanRuleConfig = new BleScanRuleConfig.Builder()
 //                .setServiceUuids(serviceUuids)      // 只扫描指定的服务的设备，可选
                 .setDeviceName(true, names)         // 只扫描指定广播名的设备，可选
@@ -115,26 +118,42 @@ public class MainActivity extends AppCompatActivity {
         mDeviceName = findViewById(R.id.txt_name_show);
         mDeviceRssi = findViewById(R.id.txt_rssi_show);
         mDataShow = findViewById(R.id.btn_show_data);
-
+        edit_rssi = findViewById(R.id.edit_rssi);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+
         scanDevices();
     }
 
     public void onClick(View v) {
         switch (v.getId()) {
             case R.id.btn_scan:
+                if (!BleManager.getInstance().isBlueEnable()) {
+                    Toast.makeText(this, "请打开蓝牙！", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                mScanDeviceRssi = Integer.parseInt(edit_rssi.getText().toString());
+                BleManager.getInstance().cancelScan();
+                scanDevices();
                 break;
         }
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        BleManager.getInstance().destroy();
+    }
+
     private void scanDevices() {
+//        BleManager.getInstance().cancelScan();
         BleManager.getInstance().scan(new BleScanCallback() {
             @Override
             public void onScanStarted(boolean success) {
+                BleManager.getInstance().disconnectAllDevice();
                 Log.e(TAG, "onScanStarted: ");
             }
 
@@ -160,17 +179,7 @@ public class MainActivity extends AppCompatActivity {
                             mDeviceName.setText(bleDevice.getName());
                             mDeviceRssi.setText(bleDevice.getRssi() + "");
                             //Read Device Info
-                            BleManager.getInstance().read(bleDevice, ET_UUID_SERVICE, ET_UUID_READ_FIRMWARE, new BleReadCallback() {
-                                @Override
-                                public void onReadSuccess(byte[] data) {
-                                    Log.e(TAG, "FW-Version: " + Hex.toString(data));
-                                }
 
-                                @Override
-                                public void onReadFailure(BleException exception) {
-                                    Log.e(TAG, "onReadFailure: ");
-                                }
-                            });
 
                             BleManager.getInstance().notify(bleDevice, ET_UUID_SERVICE, ET_UUID_NOTIFY, new BleNotifyCallback() {
                                 @Override
@@ -186,6 +195,7 @@ public class MainActivity extends AppCompatActivity {
                                 @Override
                                 public void onCharacteristicChanged(byte[] data) {
                                     {
+                                        Log.e(TAG, "onCharacteristicChanged: ");
                                         Log.e(TAG, "data: " + Hex.toString(data));
                                         if (dataColor == (Color.RED)) {
                                             dataColor = Color.GREEN;
@@ -196,6 +206,7 @@ public class MainActivity extends AppCompatActivity {
                                         }
                                         mDataShow.setTextColor(dataColor);
                                         mDataShow.setText(Hex.toString(data));
+                                        edit_rssi.setText(mScanDeviceRssi + "");
 //                                        handleRecData(data);
                                     }
 
@@ -205,26 +216,21 @@ public class MainActivity extends AppCompatActivity {
 
                         @Override
                         public void onDisConnected(boolean isActiveDisConnected, BleDevice device, BluetoothGatt gatt, int status) {
+                            Log.e(TAG, "onDisConnected: ");
                             BleManager.getInstance().disconnectAllDevice();
                             BleManager.getInstance().destroy();
                             mDeviceName.setText("Name");
                             mDeviceRssi.setText("Rssi");
                             mDataShow.setText(null);
-                            Log.e(TAG, "onDisConnected: ");
-                            try {
-                                Thread.sleep(2000);
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                            scanDevices();
+                            edit_rssi.setText(mScanDeviceRssi + "");
 
+                            Log.e(TAG, "onDisConnected: ");
+                            scanDevices();
                         }
                     });
                 } else {
                     return;
                 }
-//
-
             }
 
             @Override
