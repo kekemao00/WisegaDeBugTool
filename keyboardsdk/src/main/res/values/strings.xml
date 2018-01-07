@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <string name="app_name">Bluez IME</string>
+    <string name="app_name">CJ Test Tool</string>
     <string name="error_message_generic" formatted="false">Error: %s</string>
     <string name="connected_to_device_message" formatted="false">Connected to %s</string>
     <string name="disconnected_from_device_message" formatted="false">Disconnected from %s</string>
