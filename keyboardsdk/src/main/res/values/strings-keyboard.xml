@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="mouse_added">***光标模式开启***</string>
+    <string name="mouse_removed">***光标模式关闭***</string>
+
+</resources>

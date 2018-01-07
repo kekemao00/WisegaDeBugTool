@@ -27,4 +27,5 @@ dependencies {
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.1'
     compile 'com.qmuiteam:qmui:1.0.6'
     compile 'com.clj.fastble:FastBleLib:2.2.0'
+    implementation project(':keyboardsdk')
 }

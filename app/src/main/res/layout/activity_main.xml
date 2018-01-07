@@ -11,8 +11,9 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_centerInParent="true"
+        android:text="data"
         android:gravity="center"
-        android:text="21asda sadsadsadasf3"/>
+        android:textColor="@color/qmui_config_color_red"/>
 
     <com.qmuiteam.qmui.alpha.QMUIAlphaButton
         android:id="@+id/btn_scan"
