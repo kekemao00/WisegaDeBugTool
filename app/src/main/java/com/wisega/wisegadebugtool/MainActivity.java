@@ -52,13 +52,13 @@ public class MainActivity extends AppCompatActivity {
      * requestCode
      */
     private static final int REQUEST_CODE_ACCESS_COARSE_LOCATION = 1;
+    BleManager bleManager;
     private com.qmuiteam.qmui.alpha.QMUIAlphaButton mSacnDevices;
     private com.qmuiteam.qmui.widget.textview.QMUISpanTouchFixTextView mDeviceName, mDeviceRssi;
     private String[] names;
     private String mac;
     private String[] uuids;
     private boolean isAutoConnect, isNeedConnect;
-    BleManager bleManager;
     private BleScanRuleConfig bleScanRuleConfig;
     private float numTmp;
 
@@ -70,7 +70,23 @@ public class MainActivity extends AppCompatActivity {
     private int dataColor;
     private EditText edit_rssi;
     private QMUITipDialog tipDialog;
+    private BroadcastReceiver blueStateListner = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction().equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
+                int blueState = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, 0);
+                Log.i(TAG, "bluetooth state change:" + blueState);
+                if (blueState == BluetoothAdapter.STATE_ON) {
+                    Log.i(TAG, "检测到蓝牙打开，开启扫描！" + Thread.currentThread().getName());
 
+                } else if (blueState == BluetoothAdapter.STATE_OFF) {
+                    BleManager.getInstance().disconnectAllDevice();
+                    BleManager.getInstance().destroy();
+                    Log.i(TAG, "检测到蓝牙已经关闭，正在释放资源！");
+                }
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -110,7 +126,6 @@ public class MainActivity extends AppCompatActivity {
             decorView.setSystemUiVisibility(uiOptions);
         }
     }
-
 
     @SuppressLint("WrongViewCast")
     private void findView() {
@@ -320,24 +335,6 @@ public class MainActivity extends AppCompatActivity {
         //初始配置
         BleManager.getInstance().init(getApplication());
     }
-
-    private BroadcastReceiver blueStateListner = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (intent.getAction().equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
-                int blueState = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, 0);
-                Log.i(TAG, "bluetooth state change:" + blueState);
-                if (blueState == BluetoothAdapter.STATE_ON) {
-                    Log.i(TAG, "检测到蓝牙打开，开启扫描！" + Thread.currentThread().getName());
-
-                } else if (blueState == BluetoothAdapter.STATE_OFF) {
-                    BleManager.getInstance().disconnectAllDevice();
-                    BleManager.getInstance().destroy();
-                    Log.i(TAG, "检测到蓝牙已经关闭，正在释放资源！");
-                }
-            }
-        }
-    };
 
     private byte sumCheck(byte[] data) {
         byte result = 0;

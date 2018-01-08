@@ -1,6 +1,5 @@
 package com.newgame.keyboardsdk;
 
-import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
@@ -27,7 +26,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * Created by CG_Dawson on 2017/12/19.
  */
 
-public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
+public class OTAUpdate implements Runnable, KeyboardService.IBLENotify {
+    public final static String ACTION_FW_REV_UPDATED = "com.example.ti.ble.btsig.ACTION_FW_REV_UPDATED";
+    public final static String EXTRA_FW_REV_STRING = "com.example.ti.ble.btsig.EXTRA_FW_REV_STRING";
+    public static final UUID CLIENT_CHARACTERISTIC_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final String dISService_UUID = "0000180a-0000-1000-8000-00805f9b34fb";
     private static final String dISSystemID_UUID = "00002a23-0000-1000-8000-00805f9b34fb";
     private static final String dISModelNR_UUID = "00002a24-0000-1000-8000-00805f9b34fb";
@@ -36,20 +38,19 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
     private static final String dISHardwareREV_UUID = "00002a27-0000-1000-8000-00805f9b34fb";
     private static final String dISSoftwareREV_UUID = "00002a28-0000-1000-8000-00805f9b34fb";
     private static final String dISManifacturerNAME_UUID = "00002a29-0000-1000-8000-00805f9b34fb";
-    public final static String ACTION_FW_REV_UPDATED = "com.example.ti.ble.btsig.ACTION_FW_REV_UPDATED";
-    public final static String EXTRA_FW_REV_STRING = "com.example.ti.ble.btsig.EXTRA_FW_REV_STRING";
     private static final String oadService_UUID = "f000ffc0-0451-4000-b000-000000000000";
     private static final String oadImageNotify_UUID = "f000ffc1-0451-4000-b000-000000000000";
     private static final String oadBlockRequest_UUID = "f000ffc2-0451-4000-b000-000000000000";
-
+    private final String TAG = "OTAUpdate";
+    private final byte[] mOadBuffer = new byte[20];
+    private final Lock lock = new ReentrantLock();
+    private final byte[] mFileBuffer = new byte[0x40000];
+    public IOTACallBack iotaCallBack;
     private BluetoothGattService mOadService = null;
     private BluetoothGattService mConnControlService = null;
     private BluetoothGattService mBTService = null;
     private BluetoothGattCharacteristic mCharIdentify = null;
     private BluetoothGattCharacteristic mCharBlock = null;
-    private final String TAG = "OTAUpdate";
-
-    public static final UUID CLIENT_CHARACTERISTIC_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private BluetoothGattCharacteristic systemIDc;
     private BluetoothGattCharacteristic modelNRc;
     private BluetoothGattCharacteristic serialNRc;
@@ -57,34 +58,32 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
     private BluetoothGattCharacteristic hardwareREVc;
     private BluetoothGattCharacteristic softwareREVc;
     private BluetoothGattCharacteristic ManifacturerNAMEc;
-    private final byte[] mOadBuffer = new byte[20];
     private ImgHdr mFileImgHdr = new ImgHdr();
     private ImgHdr mTargImgHdr = new ImgHdr();
     private ProgInfo mProgInfo = new ProgInfo();
     private boolean mProgramming = false;
     private boolean ifBlockSend = false;
     private volatile LinkedList<bleRequest> procQueue = new LinkedList<>();
-    private final Lock lock = new ReentrantLock();
     private volatile boolean blocking = false;
     private BluetoothGatt gatt;
     private Context context;
     private String filePath;
-    private  final byte[] mFileBuffer = new byte[0x40000];
     private String fwVersion = "";
     private String curImage = "";
-    public IOTACallBack iotaCallBack;
     private byte[] curWrite;
     private int writeState;
-    public OTAUpdate(Context context,BluetoothGatt gatt,String filePath)
-    {
+    private volatile bleRequest curBleRequest = null;
+
+    public OTAUpdate(Context context, BluetoothGatt gatt, String filePath) {
         this.gatt = gatt;
         this.context = context;
         this.filePath = filePath;
     }
-    public void setIotaCallBack(IOTACallBack iotaCallBack)
-    {
+
+    public void setIotaCallBack(IOTACallBack iotaCallBack) {
         this.iotaCallBack = iotaCallBack;
     }
+
     public String getFwVersion() {
         return fwVersion;
     }
@@ -108,117 +107,112 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
         }
         return crc;
     }
-   public void getInfomation()
-   {
-       new Thread(new Runnable() {
-           @Override
-           public void run() {
 
-               //初始化
-               List<BluetoothGattService> services = gatt.getServices();
+    public void getInfomation() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
 
-               for(BluetoothGattService service:services)
-               {
-                   Log.i(TAG,"serviceName:"+service.getUuid().toString());
-                   List<BluetoothGattCharacteristic> characterList = service.getCharacteristics();
+                //初始化
+                List<BluetoothGattService> services = gatt.getServices();
 
-                   if(characterList.size()==0)
-                   {
-                       Log.i(TAG,"This service has no characteristic");
-                       return;
-                   }
-                   //发现OTA服务！！！
-                   if ((service.getUuid().toString().compareTo(oadService_UUID)) == 0)
-                   {
-                       mOadService = service;
-                       Log.i(TAG,"get OTA service！");
-                       List<BluetoothGattCharacteristic> oadCharacterList = mOadService.getCharacteristics();
+                for (BluetoothGattService service : services) {
+                    Log.i(TAG, "serviceName:" + service.getUuid().toString());
+                    List<BluetoothGattCharacteristic> characterList = service.getCharacteristics();
 
-                       mCharIdentify = oadCharacterList.get(0);
-                       Log.i(TAG,"get OTA-Ident:"+mCharIdentify.getUuid().toString());
+                    if (characterList.size() == 0) {
+                        Log.i(TAG, "This service has no characteristic");
+                        return;
+                    }
+                    //发现OTA服务！！！
+                    if ((service.getUuid().toString().compareTo(oadService_UUID)) == 0) {
+                        mOadService = service;
+                        Log.i(TAG, "get OTA service！");
+                        List<BluetoothGattCharacteristic> oadCharacterList = mOadService.getCharacteristics();
 
-                       mCharIdentify.setValue(new byte[]{0});
+                        mCharIdentify = oadCharacterList.get(0);
+                        Log.i(TAG, "get OTA-Ident:" + mCharIdentify.getUuid().toString());
 
-                       try {
-                           Thread.sleep(500);
-                       } catch (InterruptedException e) {
-                           e.printStackTrace();
-                       }
-                       enableNotify(gatt,mCharIdentify);
-                       try {
-                           Thread.sleep(500);
-                       } catch (InterruptedException e) {
-                           e.printStackTrace();
-                       }
-                       Log.i(TAG,"get image:"+gatt.writeCharacteristic(mCharIdentify));
+                        mCharIdentify.setValue(new byte[]{0});
 
-                       mCharBlock = oadCharacterList.get(1);
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        enableNotify(gatt, mCharIdentify);
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        Log.i(TAG, "get image:" + gatt.writeCharacteristic(mCharIdentify));
 
-                       Log.i(TAG,"get OTA-BLOCK:"+mCharBlock.getUuid().toString());
-                       mCharBlock.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+                        mCharBlock = oadCharacterList.get(1);
 
-                       //开启升级
+                        Log.i(TAG, "get OTA-BLOCK:" + mCharBlock.getUuid().toString());
+                        mCharBlock.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
 
-                   }
-                   else if ((service.getUuid().toString().compareTo("f000ffc0-0451-4000-b000-000000000000")) == 0) {
-                       //System.out.println("get control service success");
-                       mConnControlService = service;
-                   }
-                   else if ((service.getUuid().toString().compareTo(dISService_UUID)) == 0) {
-                       //System.out.println("get control service success");
-                       mBTService = service;
+                        //开启升级
 
-                       List<BluetoothGattCharacteristic> characteristics = mBTService.getCharacteristics();
+                    } else if ((service.getUuid().toString().compareTo("f000ffc0-0451-4000-b000-000000000000")) == 0) {
+                        //System.out.println("get control service success");
+                        mConnControlService = service;
+                    } else if ((service.getUuid().toString().compareTo(dISService_UUID)) == 0) {
+                        //System.out.println("get control service success");
+                        mBTService = service;
+
+                        List<BluetoothGattCharacteristic> characteristics = mBTService.getCharacteristics();
 
 
-                       for (final BluetoothGattCharacteristic c : characteristics) {
-                           //gatt.setCharacteristicNotification(c,true);
-                           Log.i(TAG,"subService"+c.getUuid().toString()+"    "+ c.getProperties());
+                        for (final BluetoothGattCharacteristic c : characteristics) {
+                            //gatt.setCharacteristicNotification(c,true);
+                            Log.i(TAG, "subService" + c.getUuid().toString() + "    " + c.getProperties());
 
-                           if (c.getUuid().toString().equals(dISSystemID_UUID)) {
-                               systemIDc = c;
-                           }
-                           if (c.getUuid().toString().equals(dISModelNR_UUID)) {
-                               modelNRc = c;
-                           }
-                           if (c.getUuid().toString().equals(dISSerialNR_UUID)) {
-                               serialNRc = c;
-                           }
-                           if (c.getUuid().toString().equals(dISFirmwareREV_UUID)) {
-                               firmwareREVc = c;
-                               Log.i(TAG,"open the fw notify:"+enableNotify(gatt,firmwareREVc));
-                               try {
-                                   Thread.sleep(500);
-                               } catch (InterruptedException e) {
-                                   e.printStackTrace();
-                               }
-                               Log.i(TAG, "read the fw version:" + gatt.readCharacteristic(firmwareREVc));
-                           }
-                           if (c.getUuid().toString().equals(dISHardwareREV_UUID)) {
-                               hardwareREVc = c;
-                           }
-                           if (c.getUuid().toString().equals(dISSoftwareREV_UUID)) {
-                               softwareREVc = c;
-                           }
-                           if (c.getUuid().toString().equals(dISManifacturerNAME_UUID)) {
-                               ManifacturerNAMEc = c;
-                           }
+                            if (c.getUuid().toString().equals(dISSystemID_UUID)) {
+                                systemIDc = c;
+                            }
+                            if (c.getUuid().toString().equals(dISModelNR_UUID)) {
+                                modelNRc = c;
+                            }
+                            if (c.getUuid().toString().equals(dISSerialNR_UUID)) {
+                                serialNRc = c;
+                            }
+                            if (c.getUuid().toString().equals(dISFirmwareREV_UUID)) {
+                                firmwareREVc = c;
+                                Log.i(TAG, "open the fw notify:" + enableNotify(gatt, firmwareREVc));
+                                try {
+                                    Thread.sleep(500);
+                                } catch (InterruptedException e) {
+                                    e.printStackTrace();
+                                }
+                                Log.i(TAG, "read the fw version:" + gatt.readCharacteristic(firmwareREVc));
+                            }
+                            if (c.getUuid().toString().equals(dISHardwareREV_UUID)) {
+                                hardwareREVc = c;
+                            }
+                            if (c.getUuid().toString().equals(dISSoftwareREV_UUID)) {
+                                softwareREVc = c;
+                            }
+                            if (c.getUuid().toString().equals(dISManifacturerNAME_UUID)) {
+                                ManifacturerNAMEc = c;
+                            }
 
-                       }
+                        }
 
-                   }
-               }
-           }
-       }).start();
-   }
+                    }
+                }
+            }
+        }).start();
+    }
+
     @Override
     public void run() {
         update();
 
     }
 
-    public boolean loadFile(String filepath,boolean isAsset)
-    {
+    public boolean loadFile(String filepath, boolean isAsset) {
         //初始化文件
 
         try {
@@ -234,7 +228,7 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
             stream.close();
         } catch (IOException e) {
             // Handle exceptions here
-            Log.i(TAG,"File open failed: " + filepath + "\n");
+            Log.i(TAG, "File open failed: " + filepath + "\n");
             return false;
         }
 
@@ -245,16 +239,15 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
         mFileImgHdr.imgType = ((mFileImgHdr.ver & 1) == 1) ? 'B' : 'A';
         System.arraycopy(mFileBuffer, 8, mFileImgHdr.uid, 0, 4);
 
-        Log.i(TAG,"load file ver:" + mFileImgHdr.ver);
-        Log.i(TAG,"load file len:"+mFileImgHdr.len);
+        Log.i(TAG, "load file ver:" + mFileImgHdr.ver);
+        Log.i(TAG, "load file len:" + mFileImgHdr.len);
         //System.out.println("load file templen:"+templen);
-        Log.i(TAG,"load file imgType:"+mFileImgHdr.imgType);
-        iotaCallBack.callback(1,(int)mFileImgHdr.ver,(int)mFileImgHdr.len,mFileImgHdr.imgType);
+        Log.i(TAG, "load file imgType:" + mFileImgHdr.imgType);
+        iotaCallBack.callback(1, (int) mFileImgHdr.ver, (int) mFileImgHdr.len, mFileImgHdr.imgType);
         return true;
     }
 
-    private void update()
-    {
+    private void update() {
         //准备发送数据
 
         byte[] buf = new byte[8 + 2 + 2];
@@ -267,11 +260,11 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
         // Send image notification
         mCharIdentify.setValue(buf);
         boolean notifyOK = gatt.writeCharacteristic(mCharIdentify);
-        Log.i(TAG,"notifyok?"+notifyOK);
+        Log.i(TAG, "notifyok?" + notifyOK);
 
         mProgInfo.reset();
         //进度条初始化回调
-        iotaCallBack.callback(2,(int)mProgInfo.nBlocks,0,null);
+        iotaCallBack.callback(2, (int) mProgInfo.nBlocks, 0, null);
         //开始发送数据
         mProgramming = true;
         while (mProgramming) {
@@ -280,7 +273,7 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            for (int i=0; i<6 & mProgramming; i++) {
+            for (int i = 0; i < 6 & mProgramming; i++) {
                 if (!mProgramming)
                     return;
                 ifBlockSend = true;
@@ -291,7 +284,7 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
                     // Prepare block
                     mOadBuffer[0] = Conversion.loUint16(mProgInfo.iBlocks);
                     mOadBuffer[1] = Conversion.hiUint16(mProgInfo.iBlocks);
-                    System.arraycopy(mFileBuffer, (int)mProgInfo.iBytes, mOadBuffer, 2, 16);
+                    System.arraycopy(mFileBuffer, (int) mProgInfo.iBytes, mOadBuffer, 2, 16);
 
                     int crc = calc_crc16(mOadBuffer, 18);
                     mOadBuffer[18] = Conversion.loUint16(crc);
@@ -317,9 +310,8 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
-                    while(writeState!=0)
-                    {
-                        if(writeState==2)//发送失败，要求重试
+                    while (writeState != 0) {
+                        if (writeState == 2)//发送失败，要求重试
                         {
                             gatt.writeCharacteristic(mCharBlock);
                             try {
@@ -342,17 +334,17 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
                         }
                     }*/
 
-                    if (writeState==0) {
+                    if (writeState == 0) {
                         // Update stats
                         mProgInfo.iBlocks++;
                         mProgInfo.iBytes += 16;
                         // mProgressBar.setProgress((short)((mProgInfo.iBlocks * 100) / mProgInfo.nBlocks));
-                        iotaCallBack.callback(3,(int)mProgInfo.iBlocks,0,Hex.toString(mOadBuffer));
+                        iotaCallBack.callback(3, (int) mProgInfo.iBlocks, 0, Hex.toString(mOadBuffer));
 
                     } else {
                         mProgramming = false;
-                        Log.i(TAG,"GATT writeCharacteristic failed:"+retryCount);
-                        iotaCallBack.callback(4,0,0,null);
+                        Log.i(TAG, "GATT writeCharacteristic failed:" + retryCount);
+                        iotaCallBack.callback(4, 0, 0, null);
                     }
                     if (!success) {
                         //if (success!=0) {
@@ -371,27 +363,25 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
         }
     }
 
-    private boolean enableNotify(BluetoothGatt gatt, BluetoothGattCharacteristic c)
-    {
+    private boolean enableNotify(BluetoothGatt gatt, BluetoothGattCharacteristic c) {
 
-        if(!gatt.setCharacteristicNotification(c,true)){
+        if (!gatt.setCharacteristicNotification(c, true)) {
             return false;
         }
         List<BluetoothGattDescriptor> descriptors = c.getDescriptors();
-        for(BluetoothGattDescriptor dp:descriptors)
-        {
+        for (BluetoothGattDescriptor dp : descriptors) {
             if (dp != null) {
                 if ((c.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
-                    if(!dp.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)){
+                    if (!dp.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)) {
                         return false;
                     }
                 } else if ((c.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
-                    if(!dp.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)){
+                    if (!dp.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
                         return false;
                     }
                 }
-                if(!gatt.writeDescriptor(dp)){
-                    return  false;
+                if (!gatt.writeDescriptor(dp)) {
+                    return false;
                 }
             }
         }
@@ -400,14 +390,12 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
 
     @Override
     public void notify(int mode, BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-        if(oadImageNotify_UUID.equals(characteristic.getUuid().toString()))
-        {
+        if (oadImageNotify_UUID.equals(characteristic.getUuid().toString())) {
             //chara back
-            if(mode==3)
-            {
+            if (mode == 3) {
 
                 byte[] imageData = characteristic.getValue();
-                if(imageData.length>4) {
+                if (imageData.length > 4) {
                     Log.i(TAG, "get image data:" + Hex.toString(imageData));
                     mTargImgHdr.ver = Conversion.buildUint16(imageData[1], imageData[0]);
                     mTargImgHdr.imgType = ((mTargImgHdr.ver & 1) == 1) ? 'B' : 'A';
@@ -419,34 +407,25 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
 
             }
 
-        }
-        else if(dISFirmwareREV_UUID.equals(characteristic.getUuid().toString()))
-        {
+        } else if (dISFirmwareREV_UUID.equals(characteristic.getUuid().toString())) {
 
-            if(mode==1)
-            {
+            if (mode == 1) {
                 byte[] fwData = characteristic.getValue();
-                Log.i(TAG,"get fw brand:"+Hex.toString(fwData));
+                Log.i(TAG, "get fw brand:" + Hex.toString(fwData));
                 try {
-                    fwVersion = "Firmware Revision: " +new String(fwData,"UTF-8");
+                    fwVersion = "Firmware Revision: " + new String(fwData, "UTF-8");
                 } catch (UnsupportedEncodingException e) {
                     e.printStackTrace();
                 }
             }
-        }
-        else if(oadBlockRequest_UUID.equals(characteristic.getUuid().toString()))
-        {
+        } else if (oadBlockRequest_UUID.equals(characteristic.getUuid().toString())) {
             //chara back
-            if(mode==2)
-            {
-                if(Arrays.equals(characteristic.getValue(),curWrite))
-                {
-                    if(status==0)
-                    {
+            if (mode == 2) {
+                if (Arrays.equals(characteristic.getValue(), curWrite)) {
+                    if (status == 0) {
                         writeState = 0;
                     }
-                }
-                else{
+                } else {
                     writeState = 2;
                 }
                 //iotaCallBack.callback(5,0,0,Hex.toString(characteristic.getValue())+"  state:"+status);
@@ -456,21 +435,36 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
 
     }
 
-    private class ImgHdr {
-        long ver;
-        long len;
-        Character imgType;
-        byte[] uid = new byte[4];
+    public boolean addRequestToQueue(bleRequest req) {
+        lock.lock();
+        if (procQueue.peekLast() != null) {
+            req.id = procQueue.peek().id++;
+        } else {
+            req.id = 0;
+            procQueue.add(req);
+        }
+        lock.unlock();
+        return true;
     }
-    public class bleRequest {
-        public int id;
-        public BluetoothGattCharacteristic characteristic;
-        public bleRequestOperation operation;
-        public volatile bleRequestStatus status;
-        public int timeout;
-        public int curTimeout;
-        public boolean notifyenable;
+
+    public bleRequestStatus pollForStatusofRequest(bleRequest req) {
+        lock.lock();
+        if (req == curBleRequest) {
+            bleRequestStatus stat = curBleRequest.status;
+            if (stat == bleRequestStatus.done) {
+                curBleRequest = null;
+            }
+            if (stat == bleRequestStatus.timeout) {
+                curBleRequest = null;
+            }
+            lock.unlock();
+            return stat;
+        } else {
+            lock.unlock();
+            return bleRequestStatus.no_such_request;
+        }
     }
+
     public enum bleRequestOperation {
         wrBlocking,
         wr,
@@ -488,6 +482,29 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
         no_such_request,
         failed,
     }
+
+
+    public interface IOTACallBack {
+        void callback(int mode, int arg1, int arg2, Object obj);
+    }
+
+    private class ImgHdr {
+        long ver;
+        long len;
+        Character imgType;
+        byte[] uid = new byte[4];
+    }
+
+    public class bleRequest {
+        public int id;
+        public BluetoothGattCharacteristic characteristic;
+        public bleRequestOperation operation;
+        public volatile bleRequestStatus status;
+        public int timeout;
+        public int curTimeout;
+        public boolean notifyenable;
+    }
+
     private class ProgInfo {
         long iBytes = 0; // Number of bytes programmed
         long iBlocks = 0; // Number of blocks programmed
@@ -501,44 +518,6 @@ public class OTAUpdate implements Runnable,KeyboardService.IBLENotify{
             nBlocks = (short) (mFileImgHdr.len / (16 / 4));
             //System.out.println("nBlocks:"+nBlocks);
         }
-    }
-
-
-    public boolean addRequestToQueue(bleRequest req) {
-        lock.lock();
-        if (procQueue.peekLast() != null) {
-            req.id = procQueue.peek().id++;
-        }
-        else {
-            req.id = 0;
-            procQueue.add(req);
-        }
-        lock.unlock();
-        return true;
-    }
-    private volatile bleRequest curBleRequest = null;
-    public bleRequestStatus pollForStatusofRequest(bleRequest req) {
-        lock.lock();
-        if (req == curBleRequest) {
-            bleRequestStatus stat = curBleRequest.status;
-            if (stat == bleRequestStatus.done) {
-                curBleRequest = null;
-            }
-            if (stat == bleRequestStatus.timeout) {
-                curBleRequest = null;
-            }
-            lock.unlock();
-            return stat;
-        }
-        else {
-            lock.unlock();
-            return bleRequestStatus.no_such_request;
-        }
-    }
-
-    public interface IOTACallBack
-    {
-        void callback(int mode,int arg1,int arg2,Object obj);
     }
 
 }

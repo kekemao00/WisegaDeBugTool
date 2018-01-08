@@ -40,16 +40,15 @@ import java.util.concurrent.CopyOnWriteArraySet;
  */
 public class KeyboardService extends Service {
 
-    private static final String TAG = "KeyboardService";
-
     public static final String ET_UUID_NOTIFY = "0000ffe2-0000-1000-8000-00805f9b34fb";
     public static final String ET_UUID_SERVICE = "00000000-0000-1000-8000-00805f9b34fb";
     public static final String ET_UUID_WRITE = "0000ffe1-0000-1000-8000-00805f9b34fb";
-    private static final String ACTION_CONNECT_SUCCESS = "com.wisega.CONNECT_STATE";
     public final static int[] KEY = new int[]{//zikway201511_cj0
             Hex.toIntB("zikw".getBytes()), Hex.toIntB("ay20".getBytes()),
             Hex.toIntB("1511".getBytes()), Hex.toIntB("_cj0".getBytes())
     };
+    private static final String TAG = "KeyboardService";
+    private static final String ACTION_CONNECT_SUCCESS = "com.wisega.CONNECT_STATE";
     private final Binder binder = new LocalBinder();
     private boolean isBleManagerInitialized;
     private BleDevice mBleDevice;
@@ -58,16 +57,33 @@ public class KeyboardService extends Service {
     private long dateTimeMillis0;
     private IStateCallBack iBlueconect;
     private int mBlueConnectTime;
-
-    public enum EState {STOPSCAN,TIMEOUTANDRESET,STARTSCAN,CONNECTED,CONNECTING,CONNECTFAIL,DISCONNECTED,USERDISCONNECTED,DISCONNECTING}
     private OTAUpdate otaUpdate;
-
     private BluetoothGatt mGatt;
     private int mConnectState;
     private CopyOnWriteArraySet<IBLENotify> notifies = new CopyOnWriteArraySet<>();
     private Thread watchConnectDevices;
     private boolean watchflag = true;
-    private  BluetoothGattCharacteristic writeCharacter;
+    private BluetoothGattCharacteristic writeCharacter;
+    private BroadcastReceiver blueStateListner = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction().equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
+                int blueState = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, 0);
+                Log.i(TAG, "bluetooth state change:" + blueState);
+                if (blueState == BluetoothAdapter.STATE_ON) {
+                    Log.i(TAG, "检测到蓝牙打开，开启扫描！" + Thread.currentThread().getName());
+                    //scanAndConnect();
+                } else if (blueState == BluetoothAdapter.STATE_OFF) {
+                    // BleManager.getInstance().disconnectAllDevice();
+                    // BleManager.getInstance().destroy();
+                    // mHidKeyboard = null;
+                    Log.i(TAG, "检测到蓝牙已经关闭，正在释放资源！");
+
+                }
+            }
+        }
+    };
+
     public KeyboardService() {
     }
 
@@ -99,32 +115,10 @@ public class KeyboardService extends Service {
         } else if (intent.getAction().equals(BluezService.REQUEST_CONFIG)) {
 
         }
-        registerReceiver(blueStateListner,new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
+        registerReceiver(blueStateListner, new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
         return START_STICKY;
     }
-   private BroadcastReceiver blueStateListner = new BroadcastReceiver() {
-       @Override
-       public void onReceive(Context context, Intent intent) {
-          if(intent.getAction().equals(BluetoothAdapter.ACTION_STATE_CHANGED))
-          {
-              int blueState = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, 0);
-              Log.i(TAG,"bluetooth state change:"+blueState);
-              if(blueState==BluetoothAdapter.STATE_ON)
-              {
-                  Log.i(TAG,"检测到蓝牙打开，开启扫描！"+Thread.currentThread().getName());
-                  //scanAndConnect();
-              }
-              else if(blueState==BluetoothAdapter.STATE_OFF)
-              {
-                 // BleManager.getInstance().disconnectAllDevice();
-                 // BleManager.getInstance().destroy();
-                 // mHidKeyboard = null;
-                  Log.i(TAG,"检测到蓝牙已经关闭，正在释放资源！");
 
-              }
-          }
-       }
-   };
     private void initBleManager() {
         BleManager.getInstance().init(getApplication());
         BleManager.getInstance()
@@ -134,11 +128,9 @@ public class KeyboardService extends Service {
         isBleManagerInitialized = true;
     }
 
-    public synchronized void scanBound()
-    {
-        Log.i(TAG,"start scanBound");
-        if(mConnectState!=0||BleManager.getInstance().getBluetoothAdapter()==null||!BleManager.getInstance().getBluetoothAdapter().isEnabled())
-        {
+    public synchronized void scanBound() {
+        Log.i(TAG, "start scanBound");
+        if (mConnectState != 0 || BleManager.getInstance().getBluetoothAdapter() == null || !BleManager.getInstance().getBluetoothAdapter().isEnabled()) {
             return;
         }
         mConnectState = 1;
@@ -149,16 +141,16 @@ public class KeyboardService extends Service {
             Method method = bluetoothAdapterClass.getDeclaredMethod("getConnectionState", (Class[]) null);
             method.setAccessible(true);
             int state = (int) method.invoke(adapter, (Object[]) null);
-            Log.i(TAG,"===================================:"+state);
-            if(state == BluetoothAdapter.STATE_CONNECTED){
+            Log.i(TAG, "===================================:" + state);
+            if (state == BluetoothAdapter.STATE_CONNECTED) {
                 Set<BluetoothDevice> devices = adapter.getBondedDevices();
-                Log.i(TAG,"device num:"+devices.size());
-                for(BluetoothDevice device : devices){
+                Log.i(TAG, "device num:" + devices.size());
+                for (BluetoothDevice device : devices) {
                     Method isConnectedMethod = BluetoothDevice.class.getDeclaredMethod("isConnected", (Class[]) null);
                     method.setAccessible(true);
                     boolean isConnected = (boolean) isConnectedMethod.invoke(device, (Object[]) null);
-                    if(isConnected&&(device.getName().contains("CJ007")||device.getName().contains("Gamesir-X1"))){
-                        Log.i(TAG,"get the device:"+device.getName()+"["+device.getAddress()+"]");
+                    if (isConnected && (device.getName().contains("CJ007") || device.getName().contains("Gamesir-X1"))) {
+                        Log.i(TAG, "get the device:" + device.getName() + "[" + device.getAddress() + "]");
                         isConnect = true;
                         connect(device);
                         break;
@@ -168,32 +160,32 @@ public class KeyboardService extends Service {
 
         } catch (Exception e) {
             e.printStackTrace();
-            Log.i(TAG,"===================================异常");
+            Log.i(TAG, "===================================异常");
         }
-       if(!isConnect){
-           mConnectState = 0;
-       }
+        if (!isConnect) {
+            mConnectState = 0;
+        }
     }
-    public void connect(BluetoothDevice bluetoothDevice)
-    {
 
-           bluetoothDevice.connectGatt(getApplicationContext(), false, new BluetoothGattCallback() {
+    public void connect(BluetoothDevice bluetoothDevice) {
+
+        bluetoothDevice.connectGatt(getApplicationContext(), false, new BluetoothGattCallback() {
             @Override
             public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
                 //Log.i(TAG,"RRRRRRRRRR:["+characteristic.getUuid().toString()+"]"+Hex.toString(characteristic.getValue()));
-                notifyAllEx(1,gatt,characteristic,status);
+                notifyAllEx(1, gatt, characteristic, status);
             }
 
             @Override
             public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
                 //Log.i(TAG,"WWWWWWWWWW:["+characteristic.getUuid().toString()+"]"+Hex.toString(characteristic.getValue()));
-                notifyAllEx(2,gatt,characteristic,status);
+                notifyAllEx(2, gatt, characteristic, status);
             }
 
             @Override
             public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
 
-                notifyAllEx(3,gatt,characteristic,-100);
+                notifyAllEx(3, gatt, characteristic, -100);
                 byte[] data = characteristic.getValue();
                 handleRecData(data);
 
@@ -201,34 +193,30 @@ public class KeyboardService extends Service {
 
             @Override
             public void onConnectionStateChange(final BluetoothGatt gatt, final int status, final int newState) {
-                Log.i(TAG,status+","+newState);
+                Log.i(TAG, status + "," + newState);
 
 
-                switch(newState)
-                {
+                switch (newState) {
                     case BluetoothProfile.STATE_CONNECTED:
-                        if(watchConnectDevices!=null)
-                        {
+                        if (watchConnectDevices != null) {
                             watchflag = false;
                             watchConnectDevices = null;
                         }
-                        Log.i(TAG,"蓝牙已经连接");
+                        Log.i(TAG, "蓝牙已经连接");
                         mConnectState = 2;
                         mGatt = gatt;
-                        iBlueconect.connectstate(1,EState.CONNECTED,gatt.getDevice());
+                        iBlueconect.connectstate(1, EState.CONNECTED, gatt.getDevice());
                         break;
                     case BluetoothProfile.STATE_CONNECTING:
-                        iBlueconect.connectstate(1,EState.CONNECTING,null);
+                        iBlueconect.connectstate(1, EState.CONNECTING, null);
                         break;
                     case BluetoothProfile.STATE_DISCONNECTED:
                         mGatt = null;
                         mConnectState = 0;
-                        iBlueconect.connectstate(1,EState.DISCONNECTED,null);
+                        iBlueconect.connectstate(1, EState.DISCONNECTED, null);
                         gatt.close();
-                        if(watchConnectDevices!=null)
-                        {
-                            if(watchConnectDevices.isAlive())
-                            {
+                        if (watchConnectDevices != null) {
+                            if (watchConnectDevices.isAlive()) {
                                 watchConnectDevices.interrupt();
                             }
                             watchConnectDevices = null;
@@ -237,8 +225,7 @@ public class KeyboardService extends Service {
                         watchConnectDevices = new Thread(new Runnable() {
                             @Override
                             public void run() {
-                                while(watchflag)
-                                {
+                                while (watchflag) {
                                     try {
                                         Thread.sleep(3000);
                                         scanBound();
@@ -254,172 +241,162 @@ public class KeyboardService extends Service {
                 }
 
 
-                if(newState==BluetoothProfile.STATE_CONNECTED)
-                {
-                       new Thread(new Runnable() {
-                           @Override
-                           public void run() {
-                               gatt.discoverServices();
-                               try {
-                                   Thread.sleep(1000);
-                               } catch (InterruptedException e) {
-                                   e.printStackTrace();
-                               }
-                               if (mHidKeyboard == null) {
-                                   try {
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            gatt.discoverServices();
+                            try {
+                                Thread.sleep(1000);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            if (mHidKeyboard == null) {
+                                try {
 
-                                       mHidKeyboard = new HIDKeyboard(gatt.getDevice().getAddress(),
-                                               "session1",
-                                               KeyboardService.this,
-                                               false);
+                                    mHidKeyboard = new HIDKeyboard(gatt.getDevice().getAddress(),
+                                            "session1",
+                                            KeyboardService.this,
+                                            false);
 
-                                   } catch (Exception e) {
-                                       e.printStackTrace();
-                                   }
-                               }
-                               enableNotificationOfCharacteristic2(gatt);
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                            enableNotificationOfCharacteristic2(gatt);
 
 
-                               if(otaUpdate!=null)
-                               {
-                                   notifies.remove(otaUpdate);
+                            if (otaUpdate != null) {
+                                notifies.remove(otaUpdate);
 
-                               }
-                               otaUpdate = new OTAUpdate(getApplicationContext(),gatt,"");
-                               otaUpdate.getInfomation();
-                               notifies.add(otaUpdate);
-                               try {
-                                   Thread.sleep(1500);
-                               } catch (InterruptedException e) {
-                                   e.printStackTrace();
-                               }
-                               iBlueconect.connectstate(3,null,null);
+                            }
+                            otaUpdate = new OTAUpdate(getApplicationContext(), gatt, "");
+                            otaUpdate.getInfomation();
+                            notifies.add(otaUpdate);
+                            try {
+                                Thread.sleep(1500);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            iBlueconect.connectstate(3, null, null);
 
-                           }
-                       }).start();
+                        }
+                    }).start();
                 }
 
             }
         });
     }
 
-
     private void enableNotificationOfCharacteristic2(BluetoothGatt gatt) {
         UUID ServiceUUID = UUID.fromString(ET_UUID_SERVICE);
         UUID CharaUUID = UUID.fromString(ET_UUID_NOTIFY);
         List<BluetoothGattService> services = gatt.getServices();
-        Log.i(TAG,"services-size:"+services.size());
-        for(BluetoothGattService service:services)
-        {
-            Log.i(TAG,"subservice:"+service.getUuid().toString());
+        Log.i(TAG, "services-size:" + services.size());
+        for (BluetoothGattService service : services) {
+            Log.i(TAG, "subservice:" + service.getUuid().toString());
         }
         BluetoothGattService service = gatt.getService(ServiceUUID);
 
-            if(service != null){
-                BluetoothGattCharacteristic chara= service.getCharacteristic(CharaUUID);
-                gatt.setCharacteristicNotification(chara,true);
-                if(chara != null){
+        if (service != null) {
+            BluetoothGattCharacteristic chara = service.getCharacteristic(CharaUUID);
+            gatt.setCharacteristicNotification(chara, true);
+            if (chara != null) {
 
-                    List<BluetoothGattDescriptor> descriptors = chara.getDescriptors();
-                    for(BluetoothGattDescriptor dp:descriptors)
-                    {
-                        if (dp != null) {
-                            if ((chara.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
-                                dp.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                            } else if ((chara.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
-                                dp.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
-                            }
-                            gatt.writeDescriptor(dp);
+                List<BluetoothGattDescriptor> descriptors = chara.getDescriptors();
+                for (BluetoothGattDescriptor dp : descriptors) {
+                    if (dp != null) {
+                        if ((chara.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
+                            dp.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                        } else if ((chara.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
+                            dp.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
                         }
+                        gatt.writeDescriptor(dp);
                     }
                 }
             }
+        }
 
     }
-   private void handleRecData(byte[] data)
-   {
-       Log.i("templog&chararec", Hex.toString(data));
-       if(data.length<3)
-       {
-           return;
-       }
-       if(data[0]==(byte)0xa5)//包头
-       {
-           int len = data[1]&0xff;
-           if(data.length<len)
-           {
-               Log.e(TAG,"丢包！");
-               return;
-           }
-           if(sumCheck(Arrays.copyOfRange(data,0,len-1))!=data[len-1])
-           {
-               Log.e(TAG,"校验错误！");
-               return;
-           }
-           //得到有效数据
-           byte[] content = Arrays.copyOfRange(data,3,len);
 
-           switch(data[2]&0xff)
-           {
-               case 0x01:
-                   if (data.length < 17) {
-                       Log.e(TAG, "onCharacteristicChanged: bad length = " + data.length);
-                   }
-
-                   try {
-//                            Log.i(TAG, "onCharacteristicChanged: mHidKeyboard = " + mHidKeyboard);
-                       //// FIXME: 2017/12/3  bytes
-                       byte[] bytes = new byte[9];
-                       // FIXME: 2017/12/3 data
-                       bytes[0] = data[3];//mouse but
-                       System.arraycopy(data, 9, bytes, 1, 8);
-                       // FIXME: 2017/12/3
-                       mHidKeyboard.handleMouseMessage(data);
-                       mHidKeyboard.handleHIDMessage((byte) 1, (byte) 1, bytes);
-                   } catch (Exception e) {
-                       e.printStackTrace();
-                   }
-                   break;
-               case 0x02:
-                   iBlueconect.connectstate(2,null,content);
-                   break;
-               case 0x11:
-                   //确认信息返回
-                   //Tea tea = new Tea();
-                   //tea.decrypt(content,0,KEY,32);
-                   break;
-           }
-       }
-   }
-    private byte sumCheck(byte[] data) {
-      byte result = 0;
-      int len = data.length;
-      for(int i=0;i<len;i++)
-      {
-         result = (byte) (result+data[i]);
-      }
-      return result;
-    }
-    private void notifyAllEx(int mode,BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
-    {
-        for(IBLENotify ibleNotify:notifies)
+    private void handleRecData(byte[] data) {
+        Log.i("templog&chararec", Hex.toString(data));
+        if (data.length < 3) {
+            return;
+        }
+        if (data[0] == (byte) 0xa5)//包头
         {
-            ibleNotify.notify(mode,gatt,characteristic,status);
+            int len = data[1] & 0xff;
+            if (data.length < len) {
+                Log.e(TAG, "丢包！");
+                return;
+            }
+            if (sumCheck(Arrays.copyOfRange(data, 0, len - 1)) != data[len - 1]) {
+                Log.e(TAG, "校验错误！");
+                return;
+            }
+            //得到有效数据
+            byte[] content = Arrays.copyOfRange(data, 3, len);
+
+            switch (data[2] & 0xff) {
+                case 0x01:
+                    if (data.length < 17) {
+                        Log.e(TAG, "onCharacteristicChanged: bad length = " + data.length);
+                    }
+
+                    try {
+//                            Log.i(TAG, "onCharacteristicChanged: mHidKeyboard = " + mHidKeyboard);
+                        //// FIXME: 2017/12/3  bytes
+                        byte[] bytes = new byte[9];
+                        // FIXME: 2017/12/3 data
+                        bytes[0] = data[3];//mouse but
+                        System.arraycopy(data, 9, bytes, 1, 8);
+                        // FIXME: 2017/12/3
+                        mHidKeyboard.handleMouseMessage(data);
+                        mHidKeyboard.handleHIDMessage((byte) 1, (byte) 1, bytes);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    break;
+                case 0x02:
+                    iBlueconect.connectstate(2, null, content);
+                    break;
+                case 0x11:
+                    //确认信息返回
+                    //Tea tea = new Tea();
+                    //tea.decrypt(content,0,KEY,32);
+                    break;
+            }
         }
     }
-    public void write(byte[] data,String serviceUUID_, String charactUUID_,BleWriteCallback bleWriteCallback)
-    {
+
+    private byte sumCheck(byte[] data) {
+        byte result = 0;
+        int len = data.length;
+        for (int i = 0; i < len; i++) {
+            result = (byte) (result + data[i]);
+        }
+        return result;
+    }
+
+    private void notifyAllEx(int mode, BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+        for (IBLENotify ibleNotify : notifies) {
+            ibleNotify.notify(mode, gatt, characteristic, status);
+        }
+    }
+
+    public void write(byte[] data, String serviceUUID_, String charactUUID_, BleWriteCallback bleWriteCallback) {
         UUID serviceUUID = UUID.fromString(serviceUUID_);
         UUID charactUUID = UUID.fromString(charactUUID_);
         BluetoothGattService service = null;
         if (serviceUUID == null || mGatt == null) {
-            bleWriteCallback.onWriteFailure(new OtherException("null point-1:"+serviceUUID+","+mGatt));
+            bleWriteCallback.onWriteFailure(new OtherException("null point-1:" + serviceUUID + "," + mGatt));
             return;
         }
         service = mGatt.getService(serviceUUID);
 
         if (service == null || charactUUID == null) {
-            bleWriteCallback.onWriteFailure(new OtherException("null point-1:"+service+","+charactUUID));
+            bleWriteCallback.onWriteFailure(new OtherException("null point-1:" + service + "," + charactUUID));
             return;
         }
         writeCharacter = service.getCharacteristic(charactUUID);
@@ -440,76 +417,12 @@ public class KeyboardService extends Service {
             if (!mGatt.writeCharacteristic(writeCharacter)) {
                 if (bleWriteCallback != null)
                     bleWriteCallback.onWriteFailure(new OtherException("gatt writeCharacteristic fail"));
-            }
-            else{
+            } else {
                 bleWriteCallback.onWriteSuccess();
             }
         } else {
             if (bleWriteCallback != null)
                 bleWriteCallback.onWriteFailure(new OtherException("Updates the locally stored value of this characteristic fail"));
-        }
-    }
-    public class LocalBinder extends Binder implements Serializable {
-        KeyboardService getService() {
-            return (KeyboardService.this);
-        }
-        public void setIStateCallBack(IStateCallBack iBlueconect_)
-        {
-            iBlueconect = iBlueconect_;
-        }
-        public void isResume()
-        {
-            KeyboardService.this.scanBound();
-        }
-        public BluetoothDevice getDevice()
-        {
-            return KeyboardService.this.mGatt!=null?KeyboardService.this.mGatt.getDevice():null;
-        }
-        public void write(byte[] data,String serviceUUID, String charactUUID,BleWriteCallback bleWriteCallback)
-        {
-            KeyboardService.this.write(data,serviceUUID,charactUUID,bleWriteCallback);
-        }
-        public void addNotify(IBLENotify ibleNotify)
-        {
-            notifies.add(ibleNotify);
-        }
-
-        public void removeNotify(IBLENotify ibleNotify)
-        {
-            notifies.remove(ibleNotify);
-        }
-        public String getfwVersion()
-        {
-            return otaUpdate==null?"":otaUpdate.getFwVersion();
-        }
-        public String getImgVersion()
-        {
-            return otaUpdate==null?"":otaUpdate.getCurImage();
-        }
-        public void setOTACallback(OTAUpdate.IOTACallBack iotaCallBack)
-        {
-            if(otaUpdate==null)
-            {
-                return;
-            }
-            otaUpdate.setIotaCallBack(iotaCallBack);
-        }
-        public void loadFile(String filepath,boolean isAsset)
-        {
-            if(otaUpdate==null)
-            {
-                return;
-            }
-            otaUpdate.loadFile(filepath,isAsset);
-        }
-        public void startOTAUpdate()
-        {
-            if(otaUpdate==null)
-            {
-                return;
-            }
-            Thread thread = new Thread(otaUpdate);
-            thread.start();
         }
     }
 
@@ -538,12 +451,74 @@ public class KeyboardService extends Service {
         //将蓝牙连接服务设置为前台
         setUpAsForeground(getString(R.string.foreground_notification_ble));
     }
-    public interface IStateCallBack
-    {
-        void connectstate(int type,EState state,Object obj);
+
+    public enum EState {STOPSCAN, TIMEOUTANDRESET, STARTSCAN, CONNECTED, CONNECTING, CONNECTFAIL, DISCONNECTED, USERDISCONNECTED, DISCONNECTING}
+
+    public interface IStateCallBack {
+        void connectstate(int type, EState state, Object obj);
     }
-    public interface IBLENotify
-    {
-        void notify(int mode,BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status);
+
+    public interface IBLENotify {
+        void notify(int mode, BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status);
+    }
+
+    public class LocalBinder extends Binder implements Serializable {
+        KeyboardService getService() {
+            return (KeyboardService.this);
+        }
+
+        public void setIStateCallBack(IStateCallBack iBlueconect_) {
+            iBlueconect = iBlueconect_;
+        }
+
+        public void isResume() {
+            KeyboardService.this.scanBound();
+        }
+
+        public BluetoothDevice getDevice() {
+            return KeyboardService.this.mGatt != null ? KeyboardService.this.mGatt.getDevice() : null;
+        }
+
+        public void write(byte[] data, String serviceUUID, String charactUUID, BleWriteCallback bleWriteCallback) {
+            KeyboardService.this.write(data, serviceUUID, charactUUID, bleWriteCallback);
+        }
+
+        public void addNotify(IBLENotify ibleNotify) {
+            notifies.add(ibleNotify);
+        }
+
+        public void removeNotify(IBLENotify ibleNotify) {
+            notifies.remove(ibleNotify);
+        }
+
+        public String getfwVersion() {
+            return otaUpdate == null ? "" : otaUpdate.getFwVersion();
+        }
+
+        public String getImgVersion() {
+            return otaUpdate == null ? "" : otaUpdate.getCurImage();
+        }
+
+        public void setOTACallback(OTAUpdate.IOTACallBack iotaCallBack) {
+            if (otaUpdate == null) {
+                return;
+            }
+            otaUpdate.setIotaCallBack(iotaCallBack);
+        }
+
+        public void loadFile(String filepath, boolean isAsset) {
+            if (otaUpdate == null) {
+                return;
+            }
+            otaUpdate.loadFile(filepath, isAsset);
+        }
+
+        public void startOTAUpdate() {
+            if (otaUpdate == null) {
+                return;
+            }
+            Thread thread = new Thread(otaUpdate);
+            thread.start();
+        }
     }
 }

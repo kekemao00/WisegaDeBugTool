@@ -11,8 +11,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_centerInParent="true"
-        android:text="data"
         android:gravity="center"
+        android:text="data"
         android:textColor="@color/qmui_config_color_red"/>
 
     <LinearLayout
@@ -29,10 +29,10 @@
 
         <EditText
             android:id="@+id/edit_rssi"
-            android:inputType="numberSigned"
             android:layout_width="70dp"
-            android:text="-100"
-            android:layout_height="wrap_content"/>
+            android:layout_height="wrap_content"
+            android:inputType="numberSigned"
+            android:text="-100"/>
 
         <com.qmuiteam.qmui.alpha.QMUIAlphaButton
             android:id="@+id/btn_scan"
