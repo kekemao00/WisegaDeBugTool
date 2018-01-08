@@ -2,13 +2,8 @@ package com.wisega.wisegadebugtool;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Build;
@@ -70,38 +65,38 @@ public class MainActivity extends AppCompatActivity {
     private int dataColor;
     private EditText edit_rssi;
     private QMUITipDialog tipDialog;
-    private BroadcastReceiver blueStateListner = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (intent.getAction().equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
-                int blueState = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, 0);
-                Log.i(TAG, "bluetooth state change:" + blueState);
-                if (blueState == BluetoothAdapter.STATE_ON) {
-                    Log.i(TAG, "检测到蓝牙打开，开启扫描！" + Thread.currentThread().getName());
-
-                } else if (blueState == BluetoothAdapter.STATE_OFF) {
-                    BleManager.getInstance().disconnectAllDevice();
-                    BleManager.getInstance().destroy();
-                    Log.i(TAG, "检测到蓝牙已经关闭，正在释放资源！");
-                }
-            }
-        }
-    };
+//    private BroadcastReceiver blueStateListner = new BroadcastReceiver() {
+//        @Override
+//        public void onReceive(Context context, Intent intent) {
+//            if (intent.getAction().equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
+//                int blueState = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, 0);
+//                Log.i(TAG, "bluetooth state change:" + blueState);
+//                if (blueState == BluetoothAdapter.STATE_ON) {
+//                    Log.i(TAG, "检测到蓝牙打开，开启扫描！" + Thread.currentThread().getName());
+//
+//                } else if (blueState == BluetoothAdapter.STATE_OFF) {
+//                    Log.i(TAG, "检测到蓝牙已经关闭，正在释放资源！");
+//                    BleManager.getInstance().disconnectAllDevice();
+//                    BleManager.getInstance().destroy();
+//                }
+//            }
+//        }
+//    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         hideBar();
-        registerReceiver(blueStateListner, new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
-
+//        registerReceiver(blueStateListner, new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
         findView();
         initViews();
-
         names = new String[]{"CJ007", "Gamesir-X1"};
-
         uuids = new String[]{ET_UUID_SERVICE, ET_UUID_NOTIFY};
+        initScanConfig();
+    }
 
+    private void initScanConfig() {
         BleManager.getInstance().setOperateTimeout(2000);
         BleScanRuleConfig scanRuleConfig = new BleScanRuleConfig.Builder()
 //                .setServiceUuids(serviceUuids)      // 只扫描指定的服务的设备，可选
@@ -139,7 +134,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-
         scanDevices();
     }
 
@@ -152,6 +146,8 @@ public class MainActivity extends AppCompatActivity {
                 }
                 mScanDeviceRssi = Integer.parseInt(edit_rssi.getText().toString());
                 BleManager.getInstance().cancelScan();
+                if (BleManager.getInstance().getAllConnectedDevice().size() > 0)
+                    BleManager.getInstance().disconnectAllDevice();
                 scanDevices();
                 break;
         }
@@ -165,32 +161,48 @@ public class MainActivity extends AppCompatActivity {
 
     private void scanDevices() {
 //        BleManager.getInstance().cancelScan();
+        BleManager.getInstance().destroy();
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        initScanConfig();
         BleManager.getInstance().scan(new BleScanCallback() {
             @Override
             public void onScanStarted(boolean success) {
+                //开始扫描
                 BleManager.getInstance().disconnectAllDevice();
                 Log.e(TAG, "onScanStarted: ");
             }
 
             @Override
             public void onScanning(BleDevice result) {
+                // 扫描到一个符合扫描规则的BLE设备（主线程）
+
                 BleManager.getInstance().cancelScan();
                 Log.e(TAG, "onScanning: devices=" + result.getName().toString() + "+1");
                 if (result.getRssi() >= mScanDeviceRssi && BleManager.getInstance().getAllConnectedDevice().size() < 1) {
                     BleManager.getInstance().connect(result, new BleGattCallback() {
                         @Override
                         public void onStartConnect() {
+                            // 开始连接
+                            BleManager.getInstance().cancelScan();
                             Log.e(TAG, "onStartConnect: ");
                         }
 
                         @Override
                         public void onConnectFail(BleException exception) {
+                            // 连接失败
+
                             Log.e(TAG, "onConnectFail: " + exception);
                             scanDevices();
                         }
 
                         @Override
                         public void onConnectSuccess(BleDevice bleDevice, final BluetoothGatt gatt, int status) {
+                            // 连接成功，BleDevice即为所连接的BLE设备
+
                             mDeviceName.setText(bleDevice.getName());
                             mDeviceRssi.setText(bleDevice.getRssi() + "");
                             //Read Device Info
@@ -198,6 +210,7 @@ public class MainActivity extends AppCompatActivity {
 
                             BleManager.getInstance().notify(bleDevice, ET_UUID_SERVICE, ET_UUID_NOTIFY, new BleNotifyCallback() {
                                 @Override
+
                                 public void onNotifySuccess() {
                                     Log.e(TAG, "onNotifySuccess: ");
                                 }
@@ -231,15 +244,23 @@ public class MainActivity extends AppCompatActivity {
 
                         @Override
                         public void onDisConnected(boolean isActiveDisConnected, BleDevice device, BluetoothGatt gatt, int status) {
-                            Log.e(TAG, "onDisConnected: ");
+                            // 连接中断，isActiveDisConnected表示是否是主动调用了断开连接方法
+                            String str = isActiveDisConnected ? "主动" : "非主动";
+                            Log.e(TAG, "连接中断: " + str);
+                            BleManager.getInstance().destroy();
                             BleManager.getInstance().disconnectAllDevice();
                             BleManager.getInstance().destroy();
                             mDeviceName.setText("Name");
                             mDeviceRssi.setText("Rssi");
                             mDataShow.setText(null);
                             edit_rssi.setText(mScanDeviceRssi + "");
-
-                            Log.e(TAG, "onDisConnected: ");
+                            try {
+                                Thread.sleep(500);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            BleManager.getInstance().disconnectAllDevice();
+                            BleManager.getInstance().destroy();
                             scanDevices();
                         }
                     });
@@ -250,6 +271,8 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onScanFinished(List<BleDevice> scanResultList) {
+
+                // 扫描结束，列出所有扫描到的符合扫描规则的BLE设备（主线程）
 
                 if (scanResultList == null || scanResultList.size() == 0) {
                     scanDevices();
