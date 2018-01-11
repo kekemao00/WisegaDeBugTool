@@ -54,3 +54,4 @@ captures/
 *.jks
 
 keyboardsdk/proguard-rules.pro
+app/release/output.json
