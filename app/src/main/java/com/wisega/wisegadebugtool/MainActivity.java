@@ -91,9 +91,28 @@ public class MainActivity extends AppCompatActivity {
 //        registerReceiver(blueStateListner, new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
         findView();
         initViews();
+        addListener();
         names = new String[]{"CJ007", "Gamesir-X1"};
         uuids = new String[]{ET_UUID_SERVICE, ET_UUID_NOTIFY};
         initScanConfig();
+    }
+
+
+    private void addListener() {
+        mSacnDevices.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!BleManager.getInstance().isBlueEnable()) {
+                    Toast.makeText(MainActivity.this, "请打开蓝牙！", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                mScanDeviceRssi = Integer.parseInt(edit_rssi.getText().toString());
+                BleManager.getInstance().cancelScan();
+                if (BleManager.getInstance().getAllConnectedDevice().size() > 0)
+                    BleManager.getInstance().disconnectAllDevice();
+                scanDevices();
+            }
+        });
     }
 
     private void initScanConfig() {
@@ -137,21 +156,14 @@ public class MainActivity extends AppCompatActivity {
         scanDevices();
     }
 
-    public void onClick(View v) {
+
+    /*public void onClick(View v) {
         switch (v.getId()) {
             case R.id.btn_scan:
-                if (!BleManager.getInstance().isBlueEnable()) {
-                    Toast.makeText(this, "请打开蓝牙！", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                mScanDeviceRssi = Integer.parseInt(edit_rssi.getText().toString());
-                BleManager.getInstance().cancelScan();
-                if (BleManager.getInstance().getAllConnectedDevice().size() > 0)
-                    BleManager.getInstance().disconnectAllDevice();
-                scanDevices();
+
                 break;
         }
-    }
+    }*/
 
     @Override
     protected void onDestroy() {
@@ -160,129 +172,138 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void scanDevices() {
+        MainActivity.this.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+
 //        BleManager.getInstance().cancelScan();
-        BleManager.getInstance().destroy();
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        initScanConfig();
-        BleManager.getInstance().scan(new BleScanCallback() {
-            @Override
-            public void onScanStarted(boolean success) {
-                //开始扫描
-                BleManager.getInstance().disconnectAllDevice();
-                Log.e(TAG, "onScanStarted: ");
-            }
+                BleManager.getInstance().destroy();
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                initScanConfig();
+                BleManager.getInstance().scan(new BleScanCallback() {
+                    @Override
+                    public void onScanStarted(boolean success) {
+                        //开始扫描
+                        BleManager.getInstance().disconnectAllDevice();
+                        Log.e(TAG, "onScanStarted: ");
+                    }
 
-            @Override
-            public void onScanning(BleDevice result) {
-                // 扫描到一个符合扫描规则的BLE设备（主线程）
+                    @Override
+                    public void onScanning(BleDevice result) {
+                        // 扫描到一个符合扫描规则的BLE设备（主线程）
 
-                BleManager.getInstance().cancelScan();
-                Log.e(TAG, "onScanning: devices=" + result.getName().toString() + "+1");
-                if (result.getRssi() >= mScanDeviceRssi && BleManager.getInstance().getAllConnectedDevice().size() < 1) {
-                    BleManager.getInstance().connect(result, new BleGattCallback() {
-                        @Override
-                        public void onStartConnect() {
-                            // 开始连接
-                            BleManager.getInstance().cancelScan();
-                            Log.e(TAG, "onStartConnect: ");
-                        }
+                        BleManager.getInstance().cancelScan();
+                        Log.e(TAG, "onScanning: devices=" + result.getName().toString() + "+1");
+                        if (result.getRssi() >= mScanDeviceRssi && BleManager.getInstance().getAllConnectedDevice().size() < 1) {
+                            Log.e(TAG, "in  IFFFFFFFFFFFFFFFFFFFFFFFFFF! ");
 
-                        @Override
-                        public void onConnectFail(BleException exception) {
-                            // 连接失败
-
-                            Log.e(TAG, "onConnectFail: " + exception);
-                            scanDevices();
-                        }
-
-                        @Override
-                        public void onConnectSuccess(BleDevice bleDevice, final BluetoothGatt gatt, int status) {
-                            // 连接成功，BleDevice即为所连接的BLE设备
-
-                            mDeviceName.setText(bleDevice.getName());
-                            mDeviceRssi.setText(bleDevice.getRssi() + "");
-                            //Read Device Info
-
-
-                            BleManager.getInstance().notify(bleDevice, ET_UUID_SERVICE, ET_UUID_NOTIFY, new BleNotifyCallback() {
+                            BleManager.getInstance().connect(result, new BleGattCallback() {
                                 @Override
-
-                                public void onNotifySuccess() {
-                                    Log.e(TAG, "onNotifySuccess: ");
+                                public void onStartConnect() {
+                                    // 开始连接
+                                    BleManager.getInstance().cancelScan();
+                                    Log.e(TAG, "onStartConnect: ");
                                 }
 
                                 @Override
-                                public void onNotifyFailure(BleException exception) {
-                                    Log.e(TAG, "onNotifyFailure: ");
+                                public void onConnectFail(BleException exception) {
+                                    // 连接失败
+
+                                    Log.e(TAG, "onConnectFail: " + exception);
+                                    scanDevices();
                                 }
 
                                 @Override
-                                public void onCharacteristicChanged(byte[] data) {
-                                    {
-                                        Log.e(TAG, "onCharacteristicChanged: ");
-                                        Log.e(TAG, "data: " + Hex.toString(data));
-                                        if (dataColor == (Color.RED)) {
-                                            dataColor = Color.GREEN;
-                                        } else if (dataColor == Color.GREEN) {
-                                            dataColor = Color.BLUE;
-                                        } else {
-                                            dataColor = Color.RED;
+                                public void onConnectSuccess(BleDevice bleDevice, final BluetoothGatt gatt, int status) {
+                                    // 连接成功，BleDevice即为所连接的BLE设备
+
+                                    mDeviceName.setText(bleDevice.getName());
+                                    mDeviceRssi.setText(bleDevice.getRssi() + "");
+                                    //Read Device Info
+
+
+                                    BleManager.getInstance().notify(bleDevice, ET_UUID_SERVICE, ET_UUID_NOTIFY, new BleNotifyCallback() {
+                                        @Override
+
+                                        public void onNotifySuccess() {
+                                            Log.e(TAG, "onNotifySuccess: ");
                                         }
-                                        mDataShow.setTextColor(dataColor);
-                                        mDataShow.setText(Hex.toString(data));
-                                        edit_rssi.setText(mScanDeviceRssi + "");
-//                                        handleRecData(data);
-                                    }
 
+                                        @Override
+                                        public void onNotifyFailure(BleException exception) {
+                                            Log.e(TAG, "onNotifyFailure: ");
+                                        }
+
+                                        @Override
+                                        public void onCharacteristicChanged(byte[] data) {
+                                            {
+                                                Log.e(TAG, "onCharacteristicChanged: ");
+                                                Log.e(TAG, "data: " + Hex.toString(data));
+                                                if (dataColor == (Color.RED)) {
+                                                    dataColor = Color.GREEN;
+                                                } else if (dataColor == Color.GREEN) {
+                                                    dataColor = Color.BLUE;
+                                                } else {
+                                                    dataColor = Color.RED;
+                                                }
+                                                mDataShow.setTextColor(dataColor);
+                                                mDataShow.setText(Hex.toString(data));
+                                                edit_rssi.setText(mScanDeviceRssi + "");
+//                                        handleRecData(data);
+                                            }
+
+                                        }
+                                    });
+                                }
+
+                                @Override
+                                public void onDisConnected(boolean isActiveDisConnected, BleDevice device, BluetoothGatt gatt, int status) {
+                                    // 连接中断，isActiveDisConnected表示是否是主动调用了断开连接方法
+                                    String str = isActiveDisConnected ? "主动" : "非主动";
+                                    Log.e(TAG, "连接中断: " + str);
+                                    BleManager.getInstance().destroy();
+                                    BleManager.getInstance().disconnectAllDevice();
+                                    BleManager.getInstance().destroy();
+                                    mDeviceName.setText("Name");
+                                    mDeviceRssi.setText("Rssi");
+                                    mDataShow.setText(null);
+                                    edit_rssi.setText(mScanDeviceRssi + "");
+                                    try {
+                                        Thread.sleep(500);
+                                    } catch (InterruptedException e) {
+                                        e.printStackTrace();
+                                    }
+                                    BleManager.getInstance().disconnectAllDevice();
+                                    BleManager.getInstance().destroy();
+                                    scanDevices();
                                 }
                             });
+                        } else {
+                            return;
                         }
+                    }
 
-                        @Override
-                        public void onDisConnected(boolean isActiveDisConnected, BleDevice device, BluetoothGatt gatt, int status) {
-                            // 连接中断，isActiveDisConnected表示是否是主动调用了断开连接方法
-                            String str = isActiveDisConnected ? "主动" : "非主动";
-                            Log.e(TAG, "连接中断: " + str);
-                            BleManager.getInstance().destroy();
-                            BleManager.getInstance().disconnectAllDevice();
-                            BleManager.getInstance().destroy();
-                            mDeviceName.setText("Name");
-                            mDeviceRssi.setText("Rssi");
-                            mDataShow.setText(null);
-                            edit_rssi.setText(mScanDeviceRssi + "");
-                            try {
-                                Thread.sleep(500);
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                            BleManager.getInstance().disconnectAllDevice();
-                            BleManager.getInstance().destroy();
+                    @Override
+                    public void onScanFinished(List<BleDevice> scanResultList) {
+
+                        // 扫描结束，列出所有扫描到的符合扫描规则的BLE设备（主线程）
+
+                        if (scanResultList == null || scanResultList.size() == 0) {
                             scanDevices();
                         }
-                    });
-                } else {
-                    return;
-                }
-            }
 
-            @Override
-            public void onScanFinished(List<BleDevice> scanResultList) {
+                        Log.e(TAG, "扫描结束，列出所有扫描到的符合扫描规则的BLE设备\n===================================");
+                        for (BleDevice devices : scanResultList) {
+                            Log.e(TAG, "onScanFinished: scanResultList=" + devices.getName().toString());
+                        }
+                        Log.e(TAG, "=============================");
 
-                // 扫描结束，列出所有扫描到的符合扫描规则的BLE设备（主线程）
-
-                if (scanResultList == null || scanResultList.size() == 0) {
-                    scanDevices();
-                }
-
-                Log.e(TAG, "扫描结束，列出所有扫描到的符合扫描规则的BLE设备\n===================================");
-                for (BleDevice devices : scanResultList) {
-                    Log.e(TAG, "onScanFinished: scanResultList=" + devices.getName().toString());
-                }
-                Log.e(TAG, "=============================");
+                    }
+                });
 
             }
         });
